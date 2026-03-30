@@ -1,5 +1,4 @@
 local M = {}
-local cmd = vim.cmd
 local api = vim.api
 local fs = vim.fs
 
@@ -74,18 +73,10 @@ local function createEvents()
     })
 end
 
-local function createCommand()
-    cmd([[
-        com! FundoEnable lua require('fundo').enable()
-        com! FundoDisable lua require('fundo').disable()
-    ]])
-end
-
 function M.enable()
     if enabled then
         return false
     end
-    createCommand()
     createEvents()
     manager:initialize(config)
     enabled = true
@@ -111,13 +102,14 @@ function M.setup(opts)
     local cfg = vim.tbl_deep_extend('keep', opts or {}, defaults)
     vim.validate('archives_dir', cfg.archives_dir, 'string')
     vim.validate('limit_archives_size', cfg.limit_archives_size, 'number')
-    config.archives_dir = vim.fn.expand(cfg.archives_dir)
-    config.limit_archives_size = cfg.limit_archives_size
-    return M.enable()
-end
-
----Reserved
-function M.install()
+    config = {
+        archives_dir = vim.fn.expand(cfg.archives_dir),
+        limit_archives_size = cfg.limit_archives_size,
+    }
+    if enabled then
+        M.disable()
+        M.enable()
+    end
 end
 
 return M
