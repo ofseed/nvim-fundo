@@ -4,7 +4,6 @@ local api = vim.api
 
 local disposable = require('fundo.lib.disposable')
 local manager    = require('fundo.manager')
-local event      = require('fundo.lib.event')
 
 local enabled
 
@@ -13,18 +12,59 @@ local disposables = {}
 
 local function createEvents()
     local groupId = api.nvim_create_augroup('Fundo', {})
-    api.nvim_create_autocmd({'BufReadPost', 'BufWritePost', 'BufWipeout'}, {
+    api.nvim_create_autocmd('BufReadPost', {
         group = groupId,
-        callback = function(t) event:emit(t.event, t.buf) end
+        callback = function(t)
+            local u = manager:attach(t.buf)
+            if u then
+                u:check()
+            end
+        end,
+    })
+    api.nvim_create_autocmd('BufWritePost', {
+        group = groupId,
+        callback = function(t)
+            local u = manager:get(t.buf)
+            if u then
+                u:reset(true)
+            end
+        end,
+    })
+    api.nvim_create_autocmd('BufWipeout', {
+        group = groupId,
+        callback = function(t)
+            local u = manager:get(t.buf)
+            if u then
+                u:dispose()
+                manager.undos[t.buf] = nil
+            end
+        end,
     })
     api.nvim_create_autocmd('CmdlineEnter', {
         group = groupId,
         pattern = ':',
-        callback = function(t) event:emit(t.event, t.file) end
+        callback = function(t)
+            if t.file ~= ':' then
+                return
+            end
+            vim.schedule(function()
+                if api.nvim_get_mode().mode == 'c' and vim.fn.getcmdtype() == ':' then
+                    manager:syncAll():raise_on_error()
+                end
+            end)
+        end,
     })
-    api.nvim_create_autocmd({'VimLeave', 'VimSuspend', 'TermEnter', 'FocusLost'}, {
+    api.nvim_create_autocmd({'VimLeave', 'VimSuspend'}, {
         group = groupId,
-        callback = function(t) event:emit(t.event) end
+        callback = function()
+            manager:syncAll(true):raise_on_error()
+        end,
+    })
+    api.nvim_create_autocmd({'TermEnter', 'FocusLost'}, {
+        group = groupId,
+        callback = function()
+            manager:syncAll():raise_on_error()
+        end,
     })
 
     return disposable:create(function()

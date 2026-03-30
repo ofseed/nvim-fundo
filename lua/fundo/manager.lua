@@ -1,8 +1,5 @@
-local fn = vim.fn
 local uv = vim.loop
-local api = vim.api
 
-local event = require('fundo.lib.event')
 local disposable = require('fundo.lib.disposable')
 local undo = require('fundo.model.undo')
 local async = require('async')
@@ -134,39 +131,39 @@ end
 function Manager:syncAll(block)
     return async.run(function()
         return self.mutex:with(function()
-        return async.run(function()
-            local tasks = {}
-            for bufnr, u in pairs(self.undos) do
-                if u:shouldTransfer() then
-                    local task = u:transfer()
-                    task:detach()
-                    tasks[bufnr] = task
+            return async.run(function()
+                local tasks = {}
+                for bufnr, u in pairs(self.undos) do
+                    if u:shouldTransfer() then
+                        local task = u:transfer()
+                        task:detach()
+                        tasks[bufnr] = task
+                    end
                 end
-            end
-            if vim.tbl_isempty(tasks) then
-                return
-            end
-            local completed = false
-            local p = allSettled(tasks)
-            p:wait(function()
+                if vim.tbl_isempty(tasks) then
+                    return
+                end
+                local completed = false
+                local p = allSettled(tasks)
+                p:wait(function()
+                    completed = true
+                end)
+                local now = uv.hrtime()
+                if block then
+                    vim.wait(1000, function()
+                        return completed
+                    end, 30, false)
+                    log.debug(('has elaspsed %dms'):format((uv.hrtime() - now) / 1e6))
+                end
+                local results = async.await(p)
+                log.debug('results:', results)
+                -- 60 * 60 * 1e9 ns = 1 hour
+                if not block and now - self.lastScannedtime > 60 * 60 * 1e9 then
+                    self.lastScannedtime = now
+                    async.await(self:scanArchivesDir())
+                end
                 completed = true
             end)
-            local now = uv.hrtime()
-            if block then
-                vim.wait(1000, function()
-                    return completed
-                end, 30, false)
-                log.debug(('has elaspsed %dms'):format((uv.hrtime() - now) / 1e6))
-            end
-            local results = async.await(p)
-            log.debug('results:', results)
-            -- 60 * 60 * 1e9 ns = 1 hour
-            if not block and now - self.lastScannedtime > 60 * 60 * 1e9 then
-                self.lastScannedtime = now
-                async.await(self:scanArchivesDir())
-            end
-            completed = true
-        end)
         end)
     end)
 end
@@ -192,39 +189,6 @@ function Manager:initialize()
         self.undos = {}
         self.lastScannedtime = 0
     end))
-    event:on('BufReadPost', function(bufnr)
-        local u = self:attach(bufnr)
-        if u then
-            u:check()
-        end
-    end, self.disposables)
-    event:on('BufWritePost', function(bufnr)
-        local u = self.undos[bufnr]
-        if u then
-            u:reset(true)
-        end
-    end, self.disposables)
-    event:on('BufWipeout', function(bufnr)
-        local u = self.undos[bufnr]
-        if u then
-            u:dispose()
-            self.undos[bufnr] = nil
-        end
-    end, self.disposables)
-    event:on('CmdlineEnter', function(char)
-        if char ~= ':' then
-            return
-        end
-        vim.schedule(function()
-            if api.nvim_get_mode().mode == 'c' and fn.getcmdtype() == ':' then
-                self:syncAll():raise_on_error()
-            end
-        end)
-    end, self.disposables)
-    event:on('VimLeave', function() self:syncAll(true):raise_on_error() end, self.disposables)
-    event:on('VimSuspend', function() self:syncAll(true):raise_on_error() end, self.disposables)
-    event:on('TermEnter', function() self:syncAll():raise_on_error() end, self.disposables)
-    event:on('FocusLost', function() self:syncAll():raise_on_error() end, self.disposables)
     return self
 end
 
