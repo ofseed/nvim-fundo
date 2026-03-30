@@ -96,4 +96,15 @@ function M.disable()
     return true
 end
 
+---Setup configuration and enable fundo
+---@param opts? FundoConfig
+function M.setup(opts)
+    M._config = opts or {}
+    return M.enable()
+end
+
+---Reserved
+function M.install()
+end
+
 return M
