@@ -9,7 +9,8 @@ local defaults = {
 ---@type FundoConfig
 local Config = vim.deepcopy(defaults)
 
-local function apply(opts)
+---@param opts? FundoConfig
+function Config.setup(opts)
     local config = vim.tbl_deep_extend('keep', opts or {}, defaults)
     vim.validate('archives_dir', config.archives_dir, 'string')
     vim.validate('limit_archives_size', config.limit_archives_size, 'number')
@@ -17,11 +18,6 @@ local function apply(opts)
     Config.limit_archives_size = config.limit_archives_size
 end
 
----@param opts? FundoConfig
-function Config.setup(opts)
-    apply(opts)
-end
-
-apply()
+Config.setup()
 
 return Config

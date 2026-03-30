@@ -31,11 +31,7 @@ local function createEvents()
     api.nvim_create_autocmd('BufWipeout', {
         group = groupId,
         callback = function(t)
-            local u = manager:get(t.buf)
-            if u then
-                u:dispose()
-                manager.undos[t.buf] = nil
-            end
+            manager:detach(t.buf)
         end,
     })
     api.nvim_create_autocmd('CmdlineEnter', {
@@ -79,7 +75,7 @@ function M.enable()
     end
     createCommand()
     createEvents()
-    manager:initialize()
+    manager:initialize(config)
     enabled = true
     return true
 end

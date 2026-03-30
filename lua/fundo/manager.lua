@@ -2,7 +2,6 @@ local uv = vim.loop
 
 local undo = require('fundo.model.undo')
 local async = require('async')
-local config = require('fundo.config')
 local log = require('fundo.lib.log')
 local path = require('fundo.fs.path')
 
@@ -21,47 +20,6 @@ local function awaitFs(argc, op, ...)
     return result
 end
 
-local function isTask(value)
-    return type(value) == 'table' and type(value.wait) == 'function'
-end
-
-local function all(tasks)
-    return async.run(function()
-        local results = {}
-        for key, value in pairs(tasks) do
-            if isTask(value) then
-                results[key] = async.await(value)
-            else
-                results[key] = value
-            end
-        end
-        return results
-    end)
-end
-
-local function allSettled(tasks)
-    return async.run(function()
-        local results = {}
-        for key, value in pairs(tasks) do
-            if isTask(value) and type(value.detach) == 'function' then
-                value:detach()
-            end
-            local ok, res = pcall(function()
-                if isTask(value) then
-                    return async.await(value)
-                end
-                return value
-            end)
-            if ok then
-                results[key] = {status = 'fulfilled', value = res}
-            else
-                results[key] = {status = 'rejected', reason = res}
-            end
-        end
-        return results
-    end)
-end
-
 function Manager:attach(bufnr)
     if not self.undos[bufnr] then
         local u = undo:new(bufnr, self.archivesDir)
@@ -72,10 +30,18 @@ function Manager:attach(bufnr)
     return self.undos[bufnr]
 end
 
+function Manager:detach(bufnr)
+    local u = self.undos[bufnr]
+    if u then
+        u:dispose()
+        self.undos[bufnr] = nil
+    end
+end
+
 function Manager:listFileStats(dir, bufferSize)
     return async.run(function()
         local stream = awaitFs(2, uv.fs_opendir, dir, nil, bufferSize or 32)
-        local tasks = {}
+        local stats = {}
         local ok, res = pcall(function()
             while true do
                 local entries = awaitFs(2, uv.fs_readdir, stream)
@@ -85,16 +51,14 @@ function Manager:listFileStats(dir, bufferSize)
                 for _, entry in ipairs(entries) do
                     if entry.type == 'file' then
                         local name = entry.name
-                        tasks[name] = async.run(function()
-                            return awaitFs(2, uv.fs_stat, path.join(dir, name))
-                        end)
+                        stats[name] = awaitFs(2, uv.fs_stat, path.join(dir, name))
                     end
                 end
             end
         end)
         awaitFs(2, uv.fs_closedir, stream)
         assert(ok, res)
-        return async.await(all(tasks))
+        return stats
     end)
 end
 
@@ -111,18 +75,14 @@ function Manager:scanArchivesDir()
         end)
         local size = 0
         local limit = self.limitArchivesSize * 1024 * 1024
-        local tasks = {}
         for _, stat in ipairs(stats) do
             if size > limit then
                 local p = path.join(self.archivesDir, stat.name)
                 log.debug(p, 'will be removed.')
-                table.insert(tasks, async.run(function()
-                    awaitFs(2, uv.fs_unlink, p)
-                end))
+                awaitFs(2, uv.fs_unlink, p)
             end
             size = size + stat.size
         end
-        return async.await(all(tasks))
     end)
 end
 
@@ -130,19 +90,19 @@ function Manager:syncAll(block)
     return async.run(function()
         return self.mutex:with(function()
             return async.run(function()
-                local tasks = {}
-                for bufnr, u in pairs(self.undos) do
-                    if u:shouldTransfer() then
-                        local task = u:transfer()
-                        task:detach()
-                        tasks[bufnr] = task
+                local p = async.run(function()
+                    local tasks = {}
+                    for _, u in pairs(self.undos) do
+                        if u:shouldTransfer() then
+                            table.insert(tasks, u:transfer())
+                        end
                     end
-                end
-                if vim.tbl_isempty(tasks) then
-                    return
-                end
+                    if vim.tbl_isempty(tasks) then
+                        return
+                    end
+                    return async.await_all(tasks)
+                end)
                 local completed = false
-                local p = allSettled(tasks)
                 p:wait(function()
                     completed = true
                 end)
@@ -166,13 +126,14 @@ function Manager:syncAll(block)
     end)
 end
 
-function Manager:initialize()
+---@param cfg FundoConfig
+function Manager:initialize(cfg)
     if self.initialized then
         return self
     end
     self.initialized = true
-    self.archivesDir = path.normalize(config.archives_dir)
-    self.limitArchivesSize = config.limit_archives_size
+    self.archivesDir = path.normalize(cfg.archives_dir)
+    self.limitArchivesSize = cfg.limit_archives_size
     -- convert 0o755 to decimal base
     uv.fs_mkdir(self.archivesDir, 493)
     self.undos = {}
