@@ -117,13 +117,13 @@ function Undo:shouldTransfer()
 end
 
 function Undo:transfer()
-    return async(function()
+    return async.run(function()
         if not self:shouldTransfer() then
             return
         end
-        local stat = await(fs.stat(self.undoPath))
+        local stat = async.await(fs.stat(self.undoPath))
         if stat then
-            await(fs.copyFile(self.name, self.fallbackPath))
+            async.await(fs.copyFile(self.name, self.fallbackPath))
         end
         self.isDirty = false
     end)

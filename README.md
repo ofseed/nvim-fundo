@@ -28,7 +28,7 @@ Install with [Packer.nvim](https://github.com/wbthomason/packer.nvim):
 
 ```lua
 use {
-    'kevinhwang91/nvim-fundo', requires = 'kevinhwang91/promise-async',
+    'kevinhwang91/nvim-fundo', requires = 'lewis6991/async.nvim',
      run = function() require('fundo').install() end
 }
 ```
@@ -37,7 +37,7 @@ use {
 
 ```lua
 use {
-    'kevinhwang91/nvim-fundo', requires = 'kevinhwang91/promise-async',
+    'kevinhwang91/nvim-fundo', requires = 'lewis6991/async.nvim',
      run = function() require('fundo').install() end
 }
 

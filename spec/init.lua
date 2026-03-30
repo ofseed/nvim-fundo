@@ -1,5 +1,11 @@
 local pwd = os.getenv('PWD')
-package.path = pwd .. '/lua/?.lua;' .. pwd .. '/lua/?/init.lua;' .. package.path
+local deps = table.concat({
+    pwd .. '/lua/?.lua',
+    pwd .. '/lua/?/init.lua',
+    pwd .. '/../async.nvim/lua/?.lua',
+    pwd .. '/../async.nvim/lua/?/init.lua'
+}, ';')
+package.path = deps .. ';' .. package.path
 
 require('busted.compatibility').exit = function(code)
     vim.schedule(function()

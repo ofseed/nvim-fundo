@@ -3,7 +3,6 @@ local uv = vim.loop
 
 local event = require('fundo.lib.event')
 local disposable = require('fundo.lib.disposable')
-local promise = require('promise')
 local utils = require('fundo.utils')
 local undo = require('fundo.model.undo')
 local async = require('async')
@@ -11,15 +10,55 @@ local config = require('fundo.config')
 local fs = require('fundo.fs')
 local log = require('fundo.lib.log')
 local path = require('fundo.fs.path')
-local mutex = require('fundo.lib.mutex')
 
 ---@class FundoManager
 ---@field initialized boolean
 ---@field undos table<number, FundoUndo>
 ---@field lastScannedtime number
----@field mutex FundoMutex
+---@field mutex vim.async.Semaphore
 ---@field disposables FundoDisposable[]
 local Manager = {}
+
+local function isTask(value)
+    return type(value) == 'table' and type(value.wait) == 'function'
+end
+
+local function all(tasks)
+    return async.run(function()
+        local results = {}
+        for key, value in pairs(tasks) do
+            if isTask(value) then
+                results[key] = async.await(value)
+            else
+                results[key] = value
+            end
+        end
+        return results
+    end)
+end
+
+local function allSettled(tasks)
+    return async.run(function()
+        local results = {}
+        for key, value in pairs(tasks) do
+            if isTask(value) and type(value.detach) == 'function' then
+                value:detach()
+            end
+            local ok, res = pcall(function()
+                if isTask(value) then
+                    return async.await(value)
+                end
+                return value
+            end)
+            if ok then
+                results[key] = {status = 'fulfilled', value = res}
+            else
+                results[key] = {status = 'rejected', reason = res}
+            end
+        end
+        return results
+    end)
+end
 
 function Manager:attach(bufnr)
     if not self.undos[bufnr] then
@@ -32,9 +71,9 @@ function Manager:attach(bufnr)
 end
 
 function Manager:listFileStats(dir, bufferSize)
-    return async(function()
+    return async.run(function()
         local tasks = {}
-        await(fs.openDirStream(dir, bufferSize, function(entries)
+        async.await(fs.openDirStream(dir, bufferSize, function(entries)
             if not entries then
                 return
             end
@@ -45,14 +84,14 @@ function Manager:listFileStats(dir, bufferSize)
                 end
             end
         end))
-        return promise.all(tasks)
+        return async.await(all(tasks))
     end)
 end
 
 function Manager:scanArchivesDir()
-    return async(function()
+    return async.run(function()
         log.debug('scanning archives dir')
-        local statTbl = await(self:listFileStats(self.archivesDir, 1024))
+        local statTbl = async.await(self:listFileStats(self.archivesDir, 1024))
         local stats = {}
         for name, stat in pairs(statTbl) do
             table.insert(stats, {name = name, mtime = stat.mtime.sec, size = stat.size})
@@ -71,42 +110,46 @@ function Manager:scanArchivesDir()
             end
             size = size + stat.size
         end
-        return promise.all(tasks)
+        return async.await(all(tasks))
     end)
 end
 
 function Manager:syncAll(block)
-    return self.mutex:use(function()
-        return async(function()
+    return async.run(function()
+        return self.mutex:with(function()
+        return async.run(function()
             local tasks = {}
             for bufnr, u in pairs(self.undos) do
                 if u:shouldTransfer() then
-                    tasks[bufnr] = u:transfer()
+                    local task = u:transfer()
+                    task:detach()
+                    tasks[bufnr] = task
                 end
             end
             if vim.tbl_isempty(tasks) then
                 return
             end
-            local res = false
-            local p = promise.allSettled(tasks):thenCall(function(value)
-                res = true
-                return value
+            local completed = false
+            local p = allSettled(tasks)
+            p:wait(function()
+                completed = true
             end)
             local now = uv.hrtime()
             if block then
                 vim.wait(1000, function()
-                    return res
+                    return completed
                 end, 30, false)
                 log.debug(('has elaspsed %dms'):format((uv.hrtime() - now) / 1e6))
             end
-            local results = await(p)
+            local results = async.await(p)
             log.debug('results:', results)
             -- 60 * 60 * 1e9 ns = 1 hour
             if not block and now - self.lastScannedtime > 60 * 60 * 1e9 then
                 self.lastScannedtime = now
-                await(self:scanArchivesDir())
+                async.await(self:scanArchivesDir())
             end
-            res = true
+            completed = true
+        end)
         end)
     end)
 end
@@ -122,7 +165,7 @@ function Manager:initialize()
     fs.mkdirSync(self.archivesDir, 493)
     self.undos = {}
     self.lastScannedtime = uv.hrtime()
-    self.mutex = mutex:new()
+    self.mutex = async.semaphore(1)
     self.disposables = {}
     table.insert(self.disposables, disposable:create(function()
         for _, b in pairs(self.undos) do
@@ -155,16 +198,16 @@ function Manager:initialize()
         if char ~= ':' then
             return
         end
-        promise.resolve():thenCall(function()
+        vim.schedule(function()
             if utils.mode() == 'c' and fn.getcmdtype() == ':' then
-                self:syncAll()
+                self:syncAll():raise_on_error()
             end
         end)
     end, self.disposables)
-    event:on('VimLeave', function() self:syncAll(true) end, self.disposables)
-    event:on('VimSuspend', function() self:syncAll(true) end, self.disposables)
-    event:on('TermEnter', function() self:syncAll() end, self.disposables)
-    event:on('FocusLost', function() self:syncAll() end, self.disposables)
+    event:on('VimLeave', function() self:syncAll(true):raise_on_error() end, self.disposables)
+    event:on('VimSuspend', function() self:syncAll(true):raise_on_error() end, self.disposables)
+    event:on('TermEnter', function() self:syncAll():raise_on_error() end, self.disposables)
+    event:on('FocusLost', function() self:syncAll():raise_on_error() end, self.disposables)
     return self
 end
 

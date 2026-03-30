@@ -86,14 +86,10 @@ function M.winCall(winid, f)
 end
 
 ---@param ms number
----@return Promise
+---@return vim.async.Task
 function M.wait(ms)
-    return require('promise')(function(resolve)
-        local timer = uv.new_timer()
-        timer:start(ms, 0, function()
-            timer:close()
-            resolve()
-        end)
+    return require('async').run(function()
+        require('async').sleep(ms)
     end)
 end
 
