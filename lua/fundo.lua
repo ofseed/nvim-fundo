@@ -2,6 +2,7 @@ local M = {}
 local cmd = vim.cmd
 local api = vim.api
 
+local config = require('fundo.config')
 local manager    = require('fundo.manager')
 
 local enabled
@@ -99,7 +100,7 @@ end
 ---Setup configuration and enable fundo
 ---@param opts? FundoConfig
 function M.setup(opts)
-    M._config = opts or {}
+    config.setup(opts)
     return M.enable()
 end
 

@@ -1,24 +1,27 @@
 local path = require('fundo.fs.path')
 
 ---@class FundoConfig
-local def = {
+local defaults = {
     archives_dir = vim.fn.stdpath('cache') .. path.sep .. 'fundo',
     limit_archives_size = 512
 }
 
 ---@type FundoConfig
-local Config = {}
+local Config = vim.deepcopy(defaults)
 
-local function init()
-    local fundo = require('fundo')
-    ---@type FundoConfig
-    Config = vim.tbl_deep_extend('keep', fundo._config or {}, def)
-    vim.validate('archives_dir', Config.archives_dir, 'string')
-    vim.validate('limit_archives_size', Config.limit_archives_size, 'number')
-    Config.archives_dir = vim.fn.expand(Config.archives_dir)
-    fundo._config = nil
+local function apply(opts)
+    local config = vim.tbl_deep_extend('keep', opts or {}, defaults)
+    vim.validate('archives_dir', config.archives_dir, 'string')
+    vim.validate('limit_archives_size', config.limit_archives_size, 'number')
+    Config.archives_dir = vim.fn.expand(config.archives_dir)
+    Config.limit_archives_size = config.limit_archives_size
 end
 
-init()
+---@param opts? FundoConfig
+function Config.setup(opts)
+    apply(opts)
+end
+
+apply()
 
 return Config
