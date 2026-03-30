@@ -52,6 +52,8 @@ local function createEvents()
             if t.file ~= ':' then
                 return
             end
+            -- Re-check on the next loop tick so command-line mode/type is fully updated
+            -- before deciding whether fundo should flush pending undo state.
             vim.schedule(function()
                 if api.nvim_get_mode().mode == 'c' and vim.fn.getcmdtype() == ':' then
                     manager:syncAll():raise_on_error()
@@ -107,6 +109,8 @@ function M.setup(opts)
         limit_archives_size = cfg.limit_archives_size,
     }
     if enabled then
+        -- Rebuild runtime state so an already enabled plugin starts using the new
+        -- archive directory and size limit immediately.
         M.disable()
         M.enable()
     end

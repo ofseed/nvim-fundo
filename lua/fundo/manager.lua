@@ -5,12 +5,15 @@ local undo = require('fundo.undo')
 local async = require('async')
 
 ---@class FundoManager
----@field initialized boolean
----@field undos table<number, FundoUndo>
----@field lastScannedtime number
----@field mutex vim.async.Semaphore
+---@field initialized boolean Whether fundo has already created runtime state.
+---@field undos table<number, FundoUndo> Undo state indexed by buffer handle.
+---@field lastScannedtime number Last archive scan time in nanoseconds.
+---@field mutex vim.async.Semaphore Serializes sync work across editor events.
+---@field archivesDir? string Normalized directory used to store fallback archives.
+---@field limitArchivesSize? number Maximum archive size in MiB before pruning.
 local Manager = {}
 
+-- Bridge libuv callback APIs into async.nvim and surface fs errors as Lua errors.
 local function awaitFs(argc, op, ...)
     local err, result = async.await(argc, op, ...)
     if err then
@@ -19,6 +22,9 @@ local function awaitFs(argc, op, ...)
     return result
 end
 
+---Attach fundo tracking to a buffer on first use.
+---@param bufnr number
+---@return FundoUndo?
 function Manager:attach(bufnr)
     if not self.undos[bufnr] then
         local u = undo:new(bufnr, self.archivesDir)
@@ -29,6 +35,8 @@ function Manager:attach(bufnr)
     return self.undos[bufnr]
 end
 
+---Stop tracking a buffer and drop its cached undo state.
+---@param bufnr number
 function Manager:detach(bufnr)
     local u = self.undos[bufnr]
     if u then
@@ -37,10 +45,15 @@ function Manager:detach(bufnr)
     end
 end
 
+---Collect file stat information for every archive file in a directory.
+---@param dir string
+---@param bufferSize? number
+---@return vim.async.Task<table<string, uv.fs_stat_t>>
 function Manager:listFileStats(dir, bufferSize)
     return async.run(function()
         local stream = awaitFs(2, uv.fs_opendir, dir, nil, bufferSize or 32)
         local stats = {}
+        -- Always close the directory handle before re-raising any traversal error.
         local ok, res = pcall(function()
             while true do
                 local entries = awaitFs(2, uv.fs_readdir, stream)
@@ -61,6 +74,8 @@ function Manager:listFileStats(dir, bufferSize)
     end)
 end
 
+---Remove old archive files when the archive directory exceeds the configured size.
+---@return vim.async.Task
 function Manager:scanArchivesDir()
     return async.run(function()
         local statTbl = async.await(self:listFileStats(self.archivesDir, 1024))
@@ -73,6 +88,8 @@ function Manager:scanArchivesDir()
         end)
         local size = 0
         local limit = self.limitArchivesSize * 1024 * 1024
+        -- Keep newer archives first and delete older ones once the size limit
+        -- has already been exceeded by the files retained so far.
         for _, stat in ipairs(stats) do
             if size > limit then
                 local p = fs.joinpath(self.archivesDir, stat.name)
@@ -83,8 +100,12 @@ function Manager:scanArchivesDir()
     end)
 end
 
+---Sync every dirty buffer to its fallback archive.
+---@param block? boolean
+---@return vim.async.Task
 function Manager:syncAll(block)
     return async.run(function()
+        -- Editor events can overlap, so serialize sync work behind one semaphore.
         return self.mutex:with(function()
             return async.run(function()
                 local p = async.run(function()
@@ -105,6 +126,8 @@ function Manager:syncAll(block)
                 end)
                 local now = uv.hrtime()
                 if block then
+                    -- Preserve the original behavior: perform a bounded synchronous
+                    -- wait first, then still await the task to completion below.
                     vim.wait(1000, function()
                         return completed
                     end, 30, false)
@@ -121,7 +144,9 @@ function Manager:syncAll(block)
     end)
 end
 
+---Initialize runtime state for the current configuration.
 ---@param cfg FundoConfig
+---@return FundoManager
 function Manager:initialize(cfg)
     if self.initialized then
         return self
@@ -137,13 +162,14 @@ function Manager:initialize(cfg)
     return self
 end
 
----
+---Get the tracked undo state for a buffer.
 ---@param bufnr number
----@return FundoUndo
+---@return FundoUndo?
 function Manager:get(bufnr)
     return self.undos[bufnr]
 end
 
+---Dispose all tracked undo state and reset manager runtime fields.
 function Manager:dispose()
     for _, b in pairs(self.undos) do
         b:dispose()

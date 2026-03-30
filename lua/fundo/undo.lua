@@ -7,9 +7,13 @@ local fs = vim.fs
 local async = require('async')
 
 ---@class FundoUndo
----@field dir string
----@field bufnr number
----@field attached boolean
+---@field name? string Absolute path of the file currently tracked by this buffer.
+---@field undoPath? string Path of Neovim's undofile for the tracked file.
+---@field fallbackPath? string Archive file used by fundo to restore undo state.
+---@field isDirty? boolean Whether the fallback archive should be refreshed on the next sync.
+---@field dir string Absolute path of fundo's archive directory.
+---@field bufnr number Buffer handle associated with this state object.
+---@field attached boolean Whether fundo is currently managing this buffer.
 local Undo = {}
 
 local function awaitFs(argc, op, ...)
@@ -20,6 +24,7 @@ local function awaitFs(argc, op, ...)
     return result
 end
 
+---@return FundoUndo
 function Undo:new(bufnr, dir)
     local o = setmetatable({}, self)
     self.__index = self
@@ -28,6 +33,7 @@ function Undo:new(bufnr, dir)
     return o
 end
 
+---Attach fundo state to a buffer if it uses an undofile.
 function Undo:attach()
     local bt = vim.bo[self.bufnr].bt
     local name = api.nvim_buf_get_name(self.bufnr)
@@ -45,7 +51,7 @@ function Undo:dispose()
     self.attached = false
 end
 
----
+---Refresh tracked file paths after a buffer name change or write.
 ---@param dirty? boolean
 ---@param bufName? string
 function Undo:reset(dirty, bufName)
@@ -68,18 +74,22 @@ function Undo:isEmpty()
     return not res:match('^number')
 end
 
+---Load the undo file into the target buffer.
 function Undo:loadUndo()
     return api.nvim_buf_call(self.bufnr, function()
         return pcall(cmd, 'sil rundo ' .. fn.fnameescape(self.undoPath))
     end)
 end
 
+---Restore fallback file contents while preserving the current buffer text and view.
 function Undo:loadFileAndUndo(winid)
     local view
     if winid then
         view = api.nvim_win_call(winid, fn.winsaveview)
     end
 
+    -- Temporarily replace the buffer with the archived file so :rundo can rebuild
+    -- the undo tree, then restore the user's current text and window view.
     local ei = vim.o.eventignore
     vim.o.eventignore = 'all'
     pcall(function()
@@ -104,10 +114,13 @@ function Undo:loadFileAndUndo(winid)
     vim.o.eventignore = ei
 end
 
+---Restore fallback contents for every visible window showing this buffer.
 function Undo:loadFallBack()
     if not uv.fs_stat(self.fallbackPath) then
         return
     end
+    -- Apply the rebuilt undo state in every window that is currently showing
+    -- this buffer so each window keeps a consistent view/restoration point.
     local winids = {}
     for _, winid in ipairs(api.nvim_list_wins()) do
         if self.bufnr == api.nvim_win_get_buf(winid) then
@@ -129,6 +142,7 @@ function Undo:shouldTransfer()
     return self.attached and self.isDirty
 end
 
+---Copy the current buffer file to the fallback archive when the undofile exists.
 function Undo:transfer()
     return async.run(function()
         if not self:shouldTransfer() then
@@ -136,6 +150,8 @@ function Undo:transfer()
         end
         local stat = awaitFs(2, uv.fs_stat, self.undoPath)
         if stat then
+            -- Write to a temporary archive first so a partial copy never replaces
+            -- the last good fallback file.
             local tempPath = self.fallbackPath .. '.__'
             awaitFs(4, uv.fs_copyfile, self.name, tempPath)
             pcall(awaitFs, 3, uv.fs_rename, tempPath, self.fallbackPath)
@@ -144,6 +160,7 @@ function Undo:transfer()
     end)
 end
 
+---Recover fallback contents when the current undofile is empty.
 function Undo:check()
     if not self.attached or self.undoPath == '' then
         return

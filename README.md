@@ -28,8 +28,7 @@ Install with [Packer.nvim](https://github.com/wbthomason/packer.nvim):
 
 ```lua
 use {
-    'kevinhwang91/nvim-fundo', requires = 'lewis6991/async.nvim',
-     run = function() require('fundo').install() end
+    'kevinhwang91/nvim-fundo', requires = 'lewis6991/async.nvim'
 }
 ```
 
@@ -37,8 +36,7 @@ use {
 
 ```lua
 use {
-    'kevinhwang91/nvim-fundo', requires = 'lewis6991/async.nvim',
-     run = function() require('fundo').install() end
+    'kevinhwang91/nvim-fundo', requires = 'lewis6991/async.nvim'
 }
 
 vim.o.undofile = true
@@ -73,13 +71,9 @@ necessary.
 }
 ```
 
-`:h fundo` may help you to get the all default configuration.
-
 ### API
 
 [fundo.lua](./lua/fundo.lua)
-
-## Run tests
 
 ## Feedback
 
