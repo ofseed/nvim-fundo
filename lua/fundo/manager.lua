@@ -1,6 +1,5 @@
 local uv = vim.loop
 
-local disposable = require('fundo.lib.disposable')
 local undo = require('fundo.model.undo')
 local async = require('async')
 local config = require('fundo.config')
@@ -12,7 +11,6 @@ local path = require('fundo.fs.path')
 ---@field undos table<number, FundoUndo>
 ---@field lastScannedtime number
 ---@field mutex vim.async.Semaphore
----@field disposables FundoDisposable[]
 local Manager = {}
 
 local function awaitFs(argc, op, ...)
@@ -180,15 +178,6 @@ function Manager:initialize()
     self.undos = {}
     self.lastScannedtime = uv.hrtime()
     self.mutex = async.semaphore(1)
-    self.disposables = {}
-    table.insert(self.disposables, disposable:create(function()
-        for _, b in pairs(self.undos) do
-            b:dispose()
-        end
-        self.initialized = false
-        self.undos = {}
-        self.lastScannedtime = 0
-    end))
     return self
 end
 
@@ -200,8 +189,12 @@ function Manager:get(bufnr)
 end
 
 function Manager:dispose()
-    disposable.disposeAll(self.disposables)
-    self.disposables = {}
+    for _, b in pairs(self.undos) do
+        b:dispose()
+    end
+    self.initialized = false
+    self.undos = {}
+    self.lastScannedtime = 0
 end
 
 return Manager

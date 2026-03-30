@@ -2,16 +2,13 @@ local M = {}
 local cmd = vim.cmd
 local api = vim.api
 
-local disposable = require('fundo.lib.disposable')
 local manager    = require('fundo.manager')
 
 local enabled
-
----@type FundoDisposable[]
-local disposables = {}
+local groupId
 
 local function createEvents()
-    local groupId = api.nvim_create_augroup('Fundo', {})
+    groupId = api.nvim_create_augroup('Fundo', {})
     api.nvim_create_autocmd('BufReadPost', {
         group = groupId,
         callback = function(t)
@@ -66,10 +63,6 @@ local function createEvents()
             manager:syncAll():raise_on_error()
         end,
     })
-
-    return disposable:create(function()
-        api.nvim_del_augroup_by_id(groupId)
-    end)
 end
 
 local function createCommand()
@@ -84,9 +77,8 @@ function M.enable()
         return false
     end
     createCommand()
-    disposables = {}
-    table.insert(disposables, createEvents())
-    table.insert(disposables, manager:initialize())
+    createEvents()
+    manager:initialize()
     enabled = true
     return true
 end
@@ -95,7 +87,11 @@ function M.disable()
     if not enabled then
         return false
     end
-    disposable.disposeAll(disposables)
+    if groupId then
+        pcall(api.nvim_del_augroup_by_id, groupId)
+        groupId = nil
+    end
+    manager:dispose()
     enabled = false
     return true
 end
