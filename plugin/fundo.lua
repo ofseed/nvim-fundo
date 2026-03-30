@@ -4,11 +4,11 @@ end
 vim.g.loaded_fundo_plugin = true
 
 vim.api.nvim_create_user_command('FundoEnable', function()
-    require('fundo').enable()
+  require('fundo').enable()
 end, {})
 
 vim.api.nvim_create_user_command('FundoDisable', function()
-    require('fundo').disable()
+  require('fundo').disable()
 end, {})
 
 require('fundo').enable()
