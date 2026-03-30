@@ -5,7 +5,6 @@ local cmd = vim.cmd
 local async = require('async')
 local path = require('fundo.fs.path')
 local fs = require('fundo.fs')
-local utils = require('fundo.utils')
 
 ---@class FundoUndo
 ---@field dir string
@@ -56,14 +55,14 @@ function Undo:reset(dirty, bufName)
 end
 
 function Undo:isEmpty()
-    local res = utils.bufCall(self.bufnr, function()
+    local res = api.nvim_buf_call(self.bufnr, function()
         return api.nvim_exec('undolist', true)
     end)
     return not res:match('^number')
 end
 
 function Undo:loadUndo()
-    return utils.bufCall(self.bufnr, function()
+    return api.nvim_buf_call(self.bufnr, function()
         return pcall(cmd, 'sil rundo ' .. fn.fnameescape(self.undoPath))
     end)
 end
@@ -71,7 +70,7 @@ end
 function Undo:loadFileAndUndo(winid)
     local view
     if winid then
-        view = utils.saveView(winid)
+        view = api.nvim_win_call(winid, fn.winsaveview)
     end
 
     local ei = vim.o.eventignore
@@ -79,7 +78,7 @@ function Undo:loadFileAndUndo(winid)
     pcall(function()
         local modified = vim.bo[self.bufnr].modified
         local lines = api.nvim_buf_get_lines(self.bufnr, 0, -1, false)
-        utils.bufCall(self.bufnr, function()
+        api.nvim_buf_call(self.bufnr, function()
             cmd(([[
                 keepalt sil %dread %s
                 keepj sil 1,%ddelete_
@@ -90,7 +89,9 @@ function Undo:loadFileAndUndo(winid)
         vim.bo[self.bufnr].modified = modified
 
         if winid then
-            utils.restView(winid, view)
+            api.nvim_win_call(winid, function()
+                fn.winrestview(view)
+            end)
         end
     end)
     vim.o.eventignore = ei
@@ -100,15 +101,20 @@ function Undo:loadFallBack()
     if not fs.statSync(self.fallbackPath) then
         return
     end
-    local preferredWinid, winids = utils.getWinByBuf(self.bufnr)
-    if preferredWinid == -1 then
+    local winids = {}
+    for _, winid in ipairs(api.nvim_list_wins()) do
+        if self.bufnr == api.nvim_win_get_buf(winid) then
+            table.insert(winids, winid)
+        end
+    end
+    if #winids == 0 then
         self:loadFileAndUndo()
-    elseif winids then
+    elseif #winids > 1 then
         for _, winid in ipairs(winids) do
             self:loadFileAndUndo(winid)
         end
     else
-        self:loadFileAndUndo(preferredWinid)
+        self:loadFileAndUndo(winids[1])
     end
 end
 

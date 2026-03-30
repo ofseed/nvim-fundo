@@ -2,7 +2,6 @@
 ---@class FundoFsPath
 local Path = {}
 
-local utils = require('fundo.utils')
 local isWindows
 local unixSep, windowSep
 
@@ -116,7 +115,7 @@ end
 
 local function init()
     unixSep, windowSep = '/', [[\]]
-    isWindows = utils.isWindows()
+    isWindows = vim.loop.os_uname().sysname == 'Windows_NT'
     Path.sep = isWindows and windowSep or unixSep
 end
 

@@ -1,9 +1,9 @@
 local fn = vim.fn
 local uv = vim.loop
+local api = vim.api
 
 local event = require('fundo.lib.event')
 local disposable = require('fundo.lib.disposable')
-local utils = require('fundo.utils')
 local undo = require('fundo.model.undo')
 local async = require('async')
 local config = require('fundo.config')
@@ -199,7 +199,7 @@ function Manager:initialize()
             return
         end
         vim.schedule(function()
-            if utils.mode() == 'c' and fn.getcmdtype() == ':' then
+            if api.nvim_get_mode().mode == 'c' and fn.getcmdtype() == ':' then
                 self:syncAll():raise_on_error()
             end
         end)
