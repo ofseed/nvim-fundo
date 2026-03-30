@@ -81,8 +81,6 @@ necessary.
 
 ## Run tests
 
-`make test`
-
 ## Feedback
 
 - If you get an issue or come up with an awesome idea, don't hesitate to open an issue in github.

@@ -1,9 +1,8 @@
 local uv = vim.loop
 local fs = vim.fs
 
-local undo = require('fundo.model.undo')
+local undo = require('fundo.undo')
 local async = require('async')
-local log = require('fundo.lib.log')
 
 ---@class FundoManager
 ---@field initialized boolean
@@ -64,7 +63,6 @@ end
 
 function Manager:scanArchivesDir()
     return async.run(function()
-        log.debug('scanning archives dir')
         local statTbl = async.await(self:listFileStats(self.archivesDir, 1024))
         local stats = {}
         for name, stat in pairs(statTbl) do
@@ -78,7 +76,6 @@ function Manager:scanArchivesDir()
         for _, stat in ipairs(stats) do
             if size > limit then
                 local p = fs.joinpath(self.archivesDir, stat.name)
-                log.debug(p, 'will be removed.')
                 awaitFs(2, uv.fs_unlink, p)
             end
             size = size + stat.size
@@ -111,10 +108,8 @@ function Manager:syncAll(block)
                     vim.wait(1000, function()
                         return completed
                     end, 30, false)
-                    log.debug(('has elaspsed %dms'):format((uv.hrtime() - now) / 1e6))
                 end
                 local results = async.await(p)
-                log.debug('results:', results)
                 -- 60 * 60 * 1e9 ns = 1 hour
                 if not block and now - self.lastScannedtime > 60 * 60 * 1e9 then
                     self.lastScannedtime = now

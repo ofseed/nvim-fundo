@@ -16,9 +16,6 @@ HEREROCKS_ACTIVE := source $(TARGET_DIR)/bin/activate
 
 LUAROCKS ?= $(TARGET_DIR)/bin/luarocks
 
-BUSTED ?= $(TARGET_DIR)/bin/busted
-BUSTED_HELPER ?= $(PWD)/spec/helper/fixtures.lua
-
 ASYNC_NVIM ?= $(TARGET_DIR)/share/lua/5.1/async
 
 LUA_LS ?= $(DEPS)/lua-language-server
@@ -26,13 +23,7 @@ LINT_LEVEL ?= Information
 
 all: deps
 
-deps: | $(HEREROCKS) $(BUSTED)
-
-test: $(BUSTED) $(ASYNC_NVIM)
-	@echo Testing ......
-	@$(HEREROCKS_ACTIVE) && eval $$(luarocks path) && \
-		$(NVIM_BIN) --clean -n --headless -u spec/init.lua -- \
-		--helper=$(BUSTED_HELPER) $(BUSTED_ARGS)
+deps: | $(HEREROCKS) $(ASYNC_NVIM)
 
 $(HEREROCKS):
 	mkdir -p $(DEPS)
@@ -40,9 +31,6 @@ $(HEREROCKS):
 
 $(LUAROCKS): $(HEREROCKS)
 	$(HEREROCKS_ENV) python $< $(TARGET_DIR) --$(LUA_VERSION) -r latest
-
-$(BUSTED): $(LUAROCKS)
-	$(HEREROCKS_ACTIVE) && luarocks install busted
 
 $(ASYNC_NVIM): $(LUAROCKS)
 	@$(HEREROCKS_ACTIVE) && luarocks install async.nvim || true
@@ -56,4 +44,4 @@ lint:
 clean:
 	rm -rf $(DEPS)
 
-.PHONY: all deps clean lint test
+.PHONY: all deps clean lint
