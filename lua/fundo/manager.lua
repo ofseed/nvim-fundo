@@ -7,7 +7,6 @@ local disposable = require('fundo.lib.disposable')
 local undo = require('fundo.model.undo')
 local async = require('async')
 local config = require('fundo.config')
-local fs = require('fundo.fs')
 local log = require('fundo.lib.log')
 local path = require('fundo.fs.path')
 
@@ -18,6 +17,14 @@ local path = require('fundo.fs.path')
 ---@field mutex vim.async.Semaphore
 ---@field disposables FundoDisposable[]
 local Manager = {}
+
+local function awaitFs(argc, op, ...)
+    local err, result = async.await(argc, op, ...)
+    if err then
+        error(err, 0)
+    end
+    return result
+end
 
 local function isTask(value)
     return type(value) == 'table' and type(value.wait) == 'function'
@@ -72,18 +79,26 @@ end
 
 function Manager:listFileStats(dir, bufferSize)
     return async.run(function()
+        local stream = awaitFs(2, uv.fs_opendir, dir, nil, bufferSize or 32)
         local tasks = {}
-        async.await(fs.openDirStream(dir, bufferSize, function(entries)
-            if not entries then
-                return
-            end
-            for _, entry in ipairs(entries) do
-                if entry.type == 'file' then
-                    local name = entry.name
-                    tasks[name] = fs.stat(path.join(dir, name))
+        local ok, res = pcall(function()
+            while true do
+                local entries = awaitFs(2, uv.fs_readdir, stream)
+                if not entries then
+                    break
+                end
+                for _, entry in ipairs(entries) do
+                    if entry.type == 'file' then
+                        local name = entry.name
+                        tasks[name] = async.run(function()
+                            return awaitFs(2, uv.fs_stat, path.join(dir, name))
+                        end)
+                    end
                 end
             end
-        end))
+        end)
+        awaitFs(2, uv.fs_closedir, stream)
+        assert(ok, res)
         return async.await(all(tasks))
     end)
 end
@@ -106,7 +121,9 @@ function Manager:scanArchivesDir()
             if size > limit then
                 local p = path.join(self.archivesDir, stat.name)
                 log.debug(p, 'will be removed.')
-                table.insert(tasks, fs.unlink(p))
+                table.insert(tasks, async.run(function()
+                    awaitFs(2, uv.fs_unlink, p)
+                end))
             end
             size = size + stat.size
         end
@@ -162,7 +179,7 @@ function Manager:initialize()
     self.archivesDir = path.normalize(config.archives_dir)
     self.limitArchivesSize = config.limit_archives_size
     -- convert 0o755 to decimal base
-    fs.mkdirSync(self.archivesDir, 493)
+    uv.fs_mkdir(self.archivesDir, 493)
     self.undos = {}
     self.lastScannedtime = uv.hrtime()
     self.mutex = async.semaphore(1)

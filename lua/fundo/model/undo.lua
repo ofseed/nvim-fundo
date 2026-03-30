@@ -1,16 +1,24 @@
 local api = vim.api
 local fn = vim.fn
 local cmd = vim.cmd
+local uv = vim.loop
 
 local async = require('async')
 local path = require('fundo.fs.path')
-local fs = require('fundo.fs')
 
 ---@class FundoUndo
 ---@field dir string
 ---@field bufnr number
 ---@field attached boolean
 local Undo = {}
+
+local function awaitFs(argc, op, ...)
+    local err, result = async.await(argc, op, ...)
+    if err then
+        error(err, 0)
+    end
+    return result
+end
 
 function Undo:new(bufnr, dir)
     local o = setmetatable({}, self)
@@ -98,7 +106,7 @@ function Undo:loadFileAndUndo(winid)
 end
 
 function Undo:loadFallBack()
-    if not fs.statSync(self.fallbackPath) then
+    if not uv.fs_stat(self.fallbackPath) then
         return
     end
     local winids = {}
@@ -127,9 +135,11 @@ function Undo:transfer()
         if not self:shouldTransfer() then
             return
         end
-        local stat = async.await(fs.stat(self.undoPath))
+        local stat = awaitFs(2, uv.fs_stat, self.undoPath)
         if stat then
-            async.await(fs.copyFile(self.name, self.fallbackPath))
+            local tempPath = self.fallbackPath .. '.__'
+            awaitFs(4, uv.fs_copyfile, self.name, tempPath)
+            pcall(awaitFs, 3, uv.fs_rename, tempPath, self.fallbackPath)
         end
         self.isDirty = false
     end)
