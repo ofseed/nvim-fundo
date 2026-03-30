@@ -18,8 +18,9 @@ local config = {
   limit_archives_size = defaults.limit_archives_size,
 }
 
-local enabled
+---@type integer?
 local group_id
+local enabled = false
 
 -- Bridge libuv callback APIs into async.nvim and surface fs errors as Lua errors.
 local function await_fs(argc, op, ...)
@@ -84,7 +85,7 @@ end
 
 function Undo:is_empty()
   local undolist = api.nvim_buf_call(self.bufnr, function()
-    return api.nvim_exec('undolist', true)
+    return api.nvim_exec2('undolist', { output = true }).output
   end)
   return not undolist:match('^number')
 end
@@ -92,7 +93,9 @@ end
 ---Load the undo file into the target buffer.
 function Undo:load_undo()
   return api.nvim_buf_call(self.bufnr, function()
-    return pcall(cmd, 'sil rundo ' .. fn.fnameescape(self.undo_path))
+    return pcall(function()
+      return cmd('sil rundo ' .. fn.fnameescape(self.undo_path))
+    end)
   end)
 end
 
@@ -431,12 +434,13 @@ end
 ---Setup configuration and enable fundo
 ---@param opts? vim.fundo.Config
 function M.setup(opts)
-  local cfg = vim.tbl_deep_extend('keep', opts or {}, defaults)
-  vim.validate('archives_dir', cfg.archives_dir, 'string')
-  vim.validate('limit_archives_size', cfg.limit_archives_size, 'number')
+  local archives_dir = opts and opts.archives_dir or defaults.archives_dir
+  local limit_archives_size = opts and opts.limit_archives_size or defaults.limit_archives_size
+  vim.validate('archives_dir', archives_dir, 'string')
+  vim.validate('limit_archives_size', limit_archives_size, 'number')
   config = {
-    archives_dir = fn.expand(cfg.archives_dir),
-    limit_archives_size = cfg.limit_archives_size,
+    archives_dir = fn.expand(archives_dir),
+    limit_archives_size = limit_archives_size,
   }
   if enabled then
     -- Rebuild runtime state so an already enabled plugin starts using the new
