@@ -28,7 +28,7 @@ Install with [Packer.nvim](https://github.com/wbthomason/packer.nvim):
 
 ```lua
 use {
-    'kevinhwang91/nvim-fundo', requires = 'lewis6991/async.nvim'
+    'ofseed/nvim-fundo', branch = 'nvim-plugin', requires = 'lewis6991/async.nvim'
 }
 ```
 
@@ -36,7 +36,7 @@ use {
 
 ```lua
 use {
-    'kevinhwang91/nvim-fundo', requires = 'lewis6991/async.nvim'
+    'ofseed/nvim-fundo', branch = 'nvim-plugin', requires = 'lewis6991/async.nvim'
 }
 
 vim.o.undofile = true
@@ -74,6 +74,29 @@ necessary.
 ### API
 
 [fundo.lua](./lua/fundo.lua)
+
+## Refactor Summary
+
+The original plugin grew a number of internal helper layers over time: async wrappers, fs wrappers,
+event/disposable helpers, path helpers, synchronization helpers, and several small internal
+modules.
+
+This codebase has since been heavily simplified with the goal of keeping the runtime behavior the
+same while removing internal indirection:
+
+- Async support now depends directly on `async.nvim`
+- Command registration and default startup now live in `plugin/fundo.lua`
+- The remaining runtime implementation has been flattened into [`lua/fundo.lua`](./lua/fundo.lua)
+- Internal wrapper layers such as custom fs/path/event/disposable/semaphore abstractions were removed
+
+Compared with the pre-refactor baseline, the Lua runtime code was reduced from:
+
+- 15 Lua files under `lua/` to 1
+- 12 documented internal classes to 3 (`FundoConfig`, `FundoUndo`, and `FundoManager`)
+- 1562 lines of Lua code under `lua/` to 451
+
+In short, `nvim-fundo` is now implemented as a much flatter plugin with fewer moving parts and
+less internal abstraction.
 
 ## Feedback
 
