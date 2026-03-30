@@ -1,9 +1,9 @@
 local uv = vim.loop
+local fs = vim.fs
 
 local undo = require('fundo.model.undo')
 local async = require('async')
 local log = require('fundo.lib.log')
-local path = require('fundo.fs.path')
 
 ---@class FundoManager
 ---@field initialized boolean
@@ -51,7 +51,7 @@ function Manager:listFileStats(dir, bufferSize)
                 for _, entry in ipairs(entries) do
                     if entry.type == 'file' then
                         local name = entry.name
-                        stats[name] = awaitFs(2, uv.fs_stat, path.join(dir, name))
+                        stats[name] = awaitFs(2, uv.fs_stat, fs.joinpath(dir, name))
                     end
                 end
             end
@@ -77,7 +77,7 @@ function Manager:scanArchivesDir()
         local limit = self.limitArchivesSize * 1024 * 1024
         for _, stat in ipairs(stats) do
             if size > limit then
-                local p = path.join(self.archivesDir, stat.name)
+                local p = fs.joinpath(self.archivesDir, stat.name)
                 log.debug(p, 'will be removed.')
                 awaitFs(2, uv.fs_unlink, p)
             end
@@ -132,7 +132,7 @@ function Manager:initialize(cfg)
         return self
     end
     self.initialized = true
-    self.archivesDir = path.normalize(cfg.archives_dir)
+    self.archivesDir = fs.normalize(cfg.archives_dir)
     self.limitArchivesSize = cfg.limit_archives_size
     -- convert 0o755 to decimal base
     uv.fs_mkdir(self.archivesDir, 493)

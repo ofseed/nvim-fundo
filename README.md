@@ -63,7 +63,7 @@ necessary.
 {
     archives_dir = {
         description = [[The directory to store the archives]],
-        default = vim.fn.stdpath('cache') .. path.separator .. 'fundo'
+        default = vim.fs.joinpath(vim.fn.stdpath('cache'), 'fundo')
     },
     limit_archives_size = {
         description = [[Limit the archives directory size, unit is MB(megabyte), elder files will be

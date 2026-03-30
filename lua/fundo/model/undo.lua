@@ -2,9 +2,9 @@ local api = vim.api
 local fn = vim.fn
 local cmd = vim.cmd
 local uv = vim.loop
+local fs = vim.fs
 
 local async = require('async')
-local path = require('fundo.fs.path')
 
 ---@class FundoUndo
 ---@field dir string
@@ -31,7 +31,7 @@ end
 function Undo:attach()
     local bt = vim.bo[self.bufnr].bt
     local name = api.nvim_buf_get_name(self.bufnr)
-    if path.dirname(name) == self.dir then
+    if fs.normalize(fs.dirname(name)) == self.dir then
         vim.bo[self.bufnr].undofile = false
     end
     self.attached = (bt == '' or bt == 'acwrite') and vim.bo[self.bufnr].undofile
@@ -55,8 +55,7 @@ function Undo:reset(dirty, bufName)
     local name = bufName or api.nvim_buf_get_name(self.bufnr)
     if name ~= self.name then
         self.undoPath = fn.undofile(name)
-        local basename = path.basename(self.undoPath)
-        self.fallbackPath = path.join(self.dir, basename)
+        self.fallbackPath = fs.joinpath(self.dir, fs.basename(self.undoPath))
     end
     self.name = name
     self.isDirty = dirty and self.undoPath ~= '' and vim.bo[self.bufnr].undolevels ~= 0

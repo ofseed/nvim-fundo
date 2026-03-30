@@ -1,13 +1,13 @@
 local M = {}
 local cmd = vim.cmd
 local api = vim.api
+local fs = vim.fs
 
 local manager    = require('fundo.manager')
-local path = require('fundo.fs.path')
 
 ---@class FundoConfig
 local defaults = {
-    archives_dir = vim.fn.stdpath('cache') .. path.sep .. 'fundo',
+    archives_dir = fs.joinpath(vim.fn.stdpath('cache'), 'fundo'),
     limit_archives_size = 512,
 }
 
