@@ -2,8 +2,20 @@ local M = {}
 local cmd = vim.cmd
 local api = vim.api
 
-local config = require('fundo.config')
 local manager    = require('fundo.manager')
+local path = require('fundo.fs.path')
+
+---@class FundoConfig
+local defaults = {
+    archives_dir = vim.fn.stdpath('cache') .. path.sep .. 'fundo',
+    limit_archives_size = 512,
+}
+
+---@type FundoConfig
+local config = {
+    archives_dir = vim.fn.expand(defaults.archives_dir),
+    limit_archives_size = defaults.limit_archives_size,
+}
 
 local enabled
 local groupId
@@ -96,7 +108,11 @@ end
 ---Setup configuration and enable fundo
 ---@param opts? FundoConfig
 function M.setup(opts)
-    config.setup(opts)
+    local cfg = vim.tbl_deep_extend('keep', opts or {}, defaults)
+    vim.validate('archives_dir', cfg.archives_dir, 'string')
+    vim.validate('limit_archives_size', cfg.limit_archives_size, 'number')
+    config.archives_dir = vim.fn.expand(cfg.archives_dir)
+    config.limit_archives_size = cfg.limit_archives_size
     return M.enable()
 end
 
